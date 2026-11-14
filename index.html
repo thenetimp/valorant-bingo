@@ -1,0 +1,284 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Valorant Bingo</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Anton&family=Archivo+Narrow:wght@600;700&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --green: #2bff3b;
+    --ink: #111;
+    --paper: #fff;
+    --dab: rgba(255, 230, 0, 0.78);
+    --bingo: #ff4655;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    min-height: 100vh;
+    background: #0f1923;
+    background-image: radial-gradient(circle at 20% 0%, #1f2d3a 0%, #0f1923 60%);
+    font-family: 'Archivo Narrow', 'Arial Narrow', sans-serif;
+    display: flex;
+    justify-content: center;
+    padding: 24px 12px 40px;
+    color: var(--ink);
+  }
+  .card {
+    background: var(--paper);
+    width: 100%;
+    max-width: 560px;
+    padding: 18px 18px 22px;
+    border-radius: 6px;
+    box-shadow: 0 20px 50px rgba(0,0,0,.5);
+  }
+  h1 {
+    margin: 0;
+    text-align: center;
+    font-family: 'Anton', sans-serif;
+    font-weight: 400;
+    font-size: clamp(26px, 7vw, 40px);
+    color: var(--green);
+    -webkit-text-stroke: 2px #000;
+    paint-order: stroke fill;
+    letter-spacing: .5px;
+    line-height: 1.1;
+  }
+  .letters {
+    display: grid;
+    grid-template-columns: repeat(5, 1fr);
+    text-align: center;
+    font-family: 'Anton', sans-serif;
+    font-size: clamp(44px, 14vw, 78px);
+    line-height: 1.05;
+    margin: 4px 0 6px;
+  }
+  .letters span { transition: color .3s, transform .3s; }
+  .letters span.lit { color: var(--bingo); transform: scale(1.08); }
+  .grid {
+    display: grid;
+    grid-template-columns: repeat(5, 1fr);
+    border: 3px solid var(--ink);
+  }
+  .cell {
+    position: relative;
+    aspect-ratio: 1;
+    border: 1.5px solid var(--ink);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    text-align: center;
+    padding: 4px;
+    font-weight: 700;
+    font-size: clamp(11px, 3.4vw, 18px);
+    line-height: 1.1;
+    cursor: pointer;
+    user-select: none;
+    background: var(--paper);
+    transition: background .15s;
+    overflow: hidden;
+  }
+  .cell:hover { background: #f4f4f4; }
+  .cell:focus-visible { outline: 3px solid #3b82f6; outline-offset: -3px; }
+  .cell small { display: block; font-size: .72em; font-weight: 600; }
+  .cell .label { position: relative; z-index: 2; }
+  .cell::after {
+    content: "";
+    position: absolute;
+    width: 78%;
+    height: 78%;
+    border-radius: 50%;
+    background: var(--dab);
+    z-index: 1;
+    transform: scale(0) rotate(var(--rot, 0deg));
+    transition: transform .18s cubic-bezier(.3,1.6,.6,1);
+    left: calc(11% + var(--dx, 0px));
+    top: calc(11% + var(--dy, 0px));
+    pointer-events: none;
+  }
+  .cell.marked::after { transform: scale(1) rotate(var(--rot, 0deg)); }
+  .cell.win { background: #ffe4e6; }
+  .cell.free .star {
+    position: absolute;
+    z-index: 0;
+    font-size: 2.6em;
+    color: #f5c400;
+    opacity: .9;
+  }
+  .status {
+    text-align: center;
+    min-height: 1.6em;
+    margin: 12px 0 4px;
+    font-family: 'Anton', sans-serif;
+    font-size: 22px;
+    letter-spacing: 1px;
+    color: var(--bingo);
+  }
+  .controls {
+    display: flex;
+    gap: 8px;
+    justify-content: center;
+    flex-wrap: wrap;
+    margin-top: 6px;
+  }
+  button {
+    font-family: inherit;
+    font-weight: 700;
+    font-size: 15px;
+    padding: 9px 16px;
+    border: 2px solid var(--ink);
+    background: var(--paper);
+    border-radius: 4px;
+    cursor: pointer;
+  }
+  button:hover { background: var(--ink); color: var(--paper); }
+  button.primary { background: var(--bingo); border-color: var(--bingo); color: #fff; }
+  button.primary:hover { background: #d93a47; }
+  .hint { text-align: center; font-size: 13px; color: #666; margin-top: 10px; }
+  .editing .cell { cursor: text; }
+  .editing .cell .label { outline: 1px dashed #999; padding: 2px; min-width: 60%; }
+  @keyframes pop { 0%{transform:scale(1)} 50%{transform:scale(1.15)} 100%{transform:scale(1)} }
+  .status.pop { animation: pop .5s; }
+</style>
+</head>
+<body>
+<main class="card">
+  <div class="letters" id="letters"><span>B</span><span>I</span><span>N</span><span>G</span><span>O</span></div>
+  <div class="grid" id="grid" role="grid" aria-label="Bingo board"></div>
+  <div class="status" id="status" aria-live="polite"></div>
+  <div class="controls">
+    <button class="primary" id="reset">New game</button>
+    <button id="shuffle">Shuffle board</button>
+    <button id="edit">Edit squares</button>
+  </div>
+  <p class="hint" id="hint">Tap a square to dab it. Tap again to undo.</p>
+</main>
+
+<script>
+const DEFAULT = [
+  "&lt;10HP Kill", "Yellow Shirt", "Scuzzy MVP", "Ult on standing still target", "No Initiator",
+  "THE COMP", "Lineup clutch", "Bucky Kill", "Defuse &lt;.2", "Thrifty / Eco win",
+  "Team Ace!", "Level 12+", "Cha**r Lurk", "Gets Glazed", "1v4+ Clutch",
+  "Warden Kill", "Gets Made Fun of", "Ult Round 2", "Ace", "Good Game",
+  "Knife Kill<small>(fcv shank)</small>", "145+ damage", "Every teammate has mic", "Shoe Wearer", "Rare Agents"
+];
+const FREE = 12;
+const KEY = "scuzzy-bingo-v1";
+
+let state = { labels: DEFAULT.slice(), marked: Array(25).fill(false) };
+state.marked[FREE] = true;
+try {
+  const saved = JSON.parse(localStorage.getItem(KEY));
+  if (saved && saved.labels && saved.labels.length === 25) state = saved;
+} catch (e) {}
+
+const save = () => { try { localStorage.setItem(KEY, JSON.stringify(state)); } catch (e) {} };
+
+const LINES = [];
+for (let i = 0; i < 5; i++) {
+  LINES.push([0,1,2,3,4].map(j => i*5+j));      // rows
+  LINES.push([0,1,2,3,4].map(j => j*5+i));      // cols
+}
+LINES.push([0,6,12,18,24], [4,8,12,16,20]);
+
+const grid = document.getElementById("grid");
+const statusEl = document.getElementById("status");
+let editing = false;
+let lastCount = 0;
+
+function render() {
+  grid.innerHTML = "";
+  state.labels.forEach((label, i) => {
+    const c = document.createElement("div");
+    c.className = "cell" + (state.marked[i] ? " marked" : "") + (i === FREE ? " free" : "");
+    c.tabIndex = 0;
+    c.setAttribute("role", "gridcell");
+    c.setAttribute("aria-pressed", state.marked[i]);
+    // a little hand-dabbed wobble, stable per square
+    const r = (i * 37) % 11;
+    c.style.setProperty("--rot", (r * 13) + "deg");
+    c.style.setProperty("--dx", ((r % 5) - 2) * 2 + "px");
+    c.style.setProperty("--dy", ((r % 3) - 1) * 3 + "px");
+    if (i === FREE) {
+      const s = document.createElement("span");
+      s.className = "star"; s.textContent = "★";
+      c.appendChild(s);
+    }
+    const l = document.createElement("span");
+    l.className = "label";
+    l.innerHTML = label;
+    if (editing) {
+      l.contentEditable = "true";
+      l.addEventListener("input", () => { state.labels[i] = l.innerHTML; save(); });
+    }
+    c.appendChild(l);
+    c.addEventListener("click", () => toggle(i));
+    c.addEventListener("keydown", e => {
+      if (!editing && (e.key === " " || e.key === "Enter")) { e.preventDefault(); toggle(i); }
+    });
+    grid.appendChild(c);
+  });
+  check();
+}
+
+function toggle(i) {
+  if (editing) return;
+  state.marked[i] = !state.marked[i];
+  save();
+  render();
+}
+
+function check() {
+  const won = LINES.filter(line => line.every(i => state.marked[i]));
+  const cells = grid.children;
+  won.flat().forEach(i => cells[i].classList.add("win"));
+  const n = won.length;
+  const letters = document.querySelectorAll("#letters span");
+  letters.forEach((s, k) => s.classList.toggle("lit", k < n));
+  if (state.marked.every(Boolean)) statusEl.textContent = "BLACKOUT! 🐸";
+  else if (n === 0) statusEl.textContent = "";
+  else if (n === 1) statusEl.textContent = "BINGO!";
+  else statusEl.textContent = n + "× BINGO!";
+  if (n > lastCount) { statusEl.classList.remove("pop"); void statusEl.offsetWidth; statusEl.classList.add("pop"); }
+  lastCount = n;
+}
+
+document.getElementById("reset").onclick = () => {
+  state.marked = Array(25).fill(false);
+  state.marked[FREE] = true;
+  lastCount = 0;
+  save(); render();
+};
+
+document.getElementById("shuffle").onclick = () => {
+  const free = state.labels[FREE];
+  const rest = state.labels.filter((_, i) => i !== FREE);
+  for (let i = rest.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [rest[i], rest[j]] = [rest[j], rest[i]];
+  }
+  rest.splice(FREE, 0, free);
+  state.labels = rest;
+  state.marked = Array(25).fill(false);
+  state.marked[FREE] = true;
+  lastCount = 0;
+  save(); render();
+};
+
+const editBtn = document.getElementById("edit");
+editBtn.onclick = () => {
+  editing = !editing;
+  document.body.classList.toggle("editing", editing);
+  editBtn.textContent = editing ? "Done editing" : "Edit squares";
+  document.getElementById("hint").textContent = editing
+    ? "Click into any square to change its text."
+    : "Tap a square to dab it. Tap again to undo.";
+  render();
+};
+
+render();
+</script>
+</body>
+</html>
