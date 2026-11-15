@@ -161,6 +161,33 @@
   .editing .cell .label { outline: 1px dashed #999; padding: 2px; min-width: 60%; }
   @keyframes pop { 0%{transform:scale(1)} 50%{transform:scale(1.15)} 100%{transform:scale(1)} }
   .status.pop { animation: pop .5s; }
+  .tip {
+    position: fixed;
+    z-index: 50;
+    max-width: 220px;
+    padding: 7px 10px;
+    background: var(--ink);
+    color: #fff;
+    font-size: 14px;
+    font-weight: 600;
+    line-height: 1.3;
+    border-radius: 5px;
+    pointer-events: none;
+    opacity: 0;
+    transform: translate(-50%, -100%) translateY(-6px);
+    transition: opacity .12s;
+  }
+  .tip.show { opacity: 1; }
+  .tip::after {
+    content: "";
+    position: absolute;
+    left: 50%;
+    bottom: -6px;
+    margin-left: -6px;
+    border: 6px solid transparent;
+    border-bottom: 0;
+    border-top-color: var(--ink);
+  }
 </style>
 </head>
 <body>
@@ -170,40 +197,98 @@
   <div class="status" id="status" aria-live="polite"></div>
   <div class="colors" id="colors"><span>Stamp:</span></div>
   <div class="controls">
-    <button class="primary" id="reset">New game</button>
-    <button id="shuffle">Shuffle board</button>
+    <button class="primary" id="shuffle">New board</button>
+    <button id="reset">Clear stamps</button>
     <button id="edit">Edit squares</button>
   </div>
-  <p class="hint" id="hint">Tap a square to dab it. Tap again to undo.</p>
+  <p class="hint" id="hint">Tap a square to stamp it. Hover for details.</p>
 </main>
+<div class="tip" id="tip" role="tooltip"></div>
 
 <script>
-const DEFAULT = [
-  "&lt;10HP Kill", "Yellow Shirt", "Scuzzy MVP", "Ult on standing still target", "No Initiator",
-  "THE COMP", "Lineup clutch", "Bucky Kill", "Defuse &lt;.2", "Thrifty / Eco win",
-  "Team Ace!", "Level 12+", "Cha**r Lurk", "Gets Glazed", "1v4+ Clutch",
-  "Warden Kill", "Gets Made Fun of", "Ult Round 2", "Ace", "Good Game",
-  "Knife Kill<small>(fcv shank)</small>", "145+ damage", "Every teammate has mic", "Shoe Wearer", "Rare Agents"
+// ===== Bingo squares: edit this list =====
+// text: what shows on the square   hint: helper text shown on hover
+const SQUARES = [
+  { text: "1v2 Clutch",        hint: "Win a round as the last one alive against 2 enemies." },
+  { text: "1v3+ Clutch",       hint: "Win a round as the last one alive against 3 or more enemies." },
+  { text: "Personal Ace",      hint: "One player kills all 5 enemies in a single round." },
+  { text: "Team Ace",          hint: "All 5 teammates each get a kill in the same round." },
+  { text: "Personal 4K",       hint: "One player gets 4 kills in a single round." },
+  { text: "Op One-Tap",        hint: "One-shot kill with the Operator." },
+  { text: "Collateral",        hint: "Kill 2 or more enemies with a single bullet." },
+  { text: "Wallbang Kill",     hint: "Get a kill by shooting through a wall or object." },
+  { text: "Kill While Flashed",hint: "Get a kill while blinded by a flash." },
+  { text: "Spray Transfer",    hint: "3 or more kills in one continuous spray." },
+  { text: "Eco Win",           hint: "Win a round on a save/eco buy." },
+  { text: "Pistol Round Win",  hint: "Win round 1 or round 13." },
+  { text: "Sheriff Headshot",  hint: "Headshot kill with the Sheriff." },
+  { text: "Classic Kill",      hint: "Get a kill with the Classic." },
+  { text: "Marshal Kill",      hint: "Get a kill with the Marshal." },
+  { text: "Ares/Odin Kill",    hint: "Get a kill with the Ares or Odin." },
+  { text: "Shorty Kill",       hint: "Get a kill with the Shorty." },
+  { text: "Knife Kill",        hint: "Get a melee kill." },
+  { text: "Defuse &lt;1s",     hint: "Defuse the spike with under 1 second left." },
+  { text: "Ninja Defuse",      hint: "Defuse the spike while enemies are still alive." },
+  { text: "Plant &lt;5s",      hint: "Plant the spike with under 5 seconds left on the round timer." },
+  { text: "Win on Time",       hint: "Defenders win because attackers never planted." },
+  { text: "Ult Kills 2+",      hint: "One ultimate kills 2 or more enemies." },
+  { text: "Wasted Ult",        hint: "An ultimate used with no kills and no impact." },
+  { text: "Recon Dart 3+",     hint: "One Sova recon bolt reveals 3 or more enemies." },
+  { text: "Instalock Reyna",   hint: "Someone locks Reyna instantly in agent select." },
+  { text: "No Initiator",      hint: "The team has no initiator." },
+  { text: "3+ Duelists",       hint: "The team runs 3 or more duelists." },
+  { text: "Someone No Mic",    hint: "A teammate never uses voice comms." },
+  { text: "Teammate AFK",      hint: "A teammate is AFK for a full round." },
+  { text: "Toxic All Chat",    hint: "An enemy is very toxic in all chat." },
+  { text: "FF Vote",           hint: "Someone calls a surrender vote." },
+  { text: "Overtime",          hint: "The match goes to overtime (12–12)." },
+  { text: "13–0 / 0–13",       hint: "The match ends 13–0 either way." },
+  { text: "5+ Round Comeback", hint: "Win the match after being down 5 or more rounds." },
+  { text: "Clutch Rotate",     hint: "A last-second rotate saves the round." },
+  { text: "Match MVP",         hint: "Top of the scoreboard when the match ends." }
 ];
-const FREE = 12;
-const KEY = "scuzzy-bingo-v1";
 
-let state = { labels: DEFAULT.slice(), marked: Array(25).fill(false) };
-state.marked[FREE] = true;
+// Middle square, always stamped
+const FREE_SQUARE = { text: "FREE", hint: "Free space: always stamped." };
+// =========================================
+
+const FREE = 12;
+const KEY = "valorant-bingo-v2";
+
+function newBoard() {
+  const pool = SQUARES.slice();
+  for (let i = pool.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [pool[i], pool[j]] = [pool[j], pool[i]];
+  }
+  const board = pool.slice(0, 24).map(s => ({ ...s }));
+  board.splice(FREE, 0, { ...FREE_SQUARE });
+  return board;
+}
+
+function freshMarks() {
+  const m = Array(25).fill(false);
+  m[FREE] = true;
+  return m;
+}
+
+let state = null;
 try {
   const saved = JSON.parse(localStorage.getItem(KEY));
-  if (saved && saved.labels && saved.labels.length === 25) state = saved;
+  if (saved && Array.isArray(saved.board) && saved.board.length === 25) state = saved;
 } catch (e) {}
+if (!state) state = { board: newBoard(), marked: freshMarks(), color: "yellow" };
 
 const save = () => { try { localStorage.setItem(KEY, JSON.stringify(state)); } catch (e) {} };
 
 const LINES = [];
 for (let i = 0; i < 5; i++) {
-  LINES.push([0,1,2,3,4].map(j => i*5+j));      // rows
-  LINES.push([0,1,2,3,4].map(j => j*5+i));      // cols
+  LINES.push([0,1,2,3,4].map(j => i*5+j));
+  LINES.push([0,1,2,3,4].map(j => j*5+i));
 }
 LINES.push([0,6,12,18,24], [4,8,12,16,20]);
 
+// ----- stamp colors -----
 const COLORS = {
   green:  "rgba(43, 220, 60, 0.72)",
   red:    "rgba(255, 60, 70, 0.72)",
@@ -231,20 +316,36 @@ Object.keys(COLORS).forEach(name => {
 });
 applyColor();
 
+// ----- hover tooltip -----
+const tip = document.getElementById("tip");
+function showTip(cell, text) {
+  if (!text) return hideTip();
+  tip.textContent = text;
+  const r = cell.getBoundingClientRect();
+  tip.style.left = Math.min(Math.max(r.left + r.width / 2, 120), window.innerWidth - 120) + "px";
+  tip.style.top = r.top + "px";
+  tip.classList.add("show");
+}
+function hideTip() { tip.classList.remove("show"); }
+window.addEventListener("scroll", hideTip, { passive: true });
+
+// ----- board -----
 const grid = document.getElementById("grid");
 const statusEl = document.getElementById("status");
+const hintEl = document.getElementById("hint");
+const DEFAULT_HINT = "Tap a square to stamp it. Hover for details.";
 let editing = false;
 let lastCount = 0;
 
 function render() {
   grid.innerHTML = "";
-  state.labels.forEach((label, i) => {
+  state.board.forEach((sq, i) => {
     const c = document.createElement("div");
     c.className = "cell" + (state.marked[i] ? " marked" : "") + (i === FREE ? " free" : "");
     c.tabIndex = 0;
     c.setAttribute("role", "gridcell");
     c.setAttribute("aria-pressed", state.marked[i]);
-    // a little hand-dabbed wobble, stable per square
+    if (sq.hint) c.setAttribute("aria-description", sq.hint);
     const r = (i * 37) % 11;
     c.style.setProperty("--rot", (r * 13) + "deg");
     c.style.setProperty("--dx", ((r % 5) - 2) * 2 + "px");
@@ -256,12 +357,21 @@ function render() {
     }
     const l = document.createElement("span");
     l.className = "label";
-    l.innerHTML = label;
+    l.innerHTML = sq.text;
     if (editing) {
       l.contentEditable = "true";
-      l.addEventListener("input", () => { state.labels[i] = l.innerHTML; save(); });
+      l.addEventListener("input", () => { state.board[i].text = l.innerHTML; save(); });
     }
     c.appendChild(l);
+
+    c.addEventListener("mouseenter", () => showTip(c, sq.hint));
+    c.addEventListener("mouseleave", hideTip);
+    c.addEventListener("focus", () => showTip(c, sq.hint));
+    c.addEventListener("blur", hideTip);
+    c.addEventListener("pointerup", e => {
+      // touch screens have no hover, so show the hint under the board instead
+      if (e.pointerType === "touch" && sq.hint) hintEl.textContent = sq.hint;
+    });
     c.addEventListener("click", () => toggle(i));
     c.addEventListener("keydown", e => {
       if (!editing && (e.key === " " || e.key === "Enter")) { e.preventDefault(); toggle(i); }
@@ -273,6 +383,7 @@ function render() {
 
 function toggle(i) {
   if (editing) return;
+  hideTip();
   state.marked[i] = !state.marked[i];
   save();
   render();
@@ -283,8 +394,7 @@ function check() {
   const cells = grid.children;
   won.flat().forEach(i => cells[i].classList.add("win"));
   const n = won.length;
-  const letters = document.querySelectorAll("#letters span");
-  letters.forEach((s, k) => s.classList.toggle("lit", k < n));
+  document.querySelectorAll("#letters span").forEach((s, k) => s.classList.toggle("lit", k < n));
   if (state.marked.every(Boolean)) statusEl.textContent = "BLACKOUT! 🐸";
   else if (n === 0) statusEl.textContent = "";
   else if (n === 1) statusEl.textContent = "BINGO!";
@@ -294,35 +404,26 @@ function check() {
 }
 
 document.getElementById("reset").onclick = () => {
-  state.marked = Array(25).fill(false);
-  state.marked[FREE] = true;
+  state.marked = freshMarks();
   lastCount = 0;
   save(); render();
 };
 
 document.getElementById("shuffle").onclick = () => {
-  const free = state.labels[FREE];
-  const rest = state.labels.filter((_, i) => i !== FREE);
-  for (let i = rest.length - 1; i > 0; i--) {
-    const j = Math.floor(Math.random() * (i + 1));
-    [rest[i], rest[j]] = [rest[j], rest[i]];
-  }
-  rest.splice(FREE, 0, free);
-  state.labels = rest;
-  state.marked = Array(25).fill(false);
-  state.marked[FREE] = true;
+  state.board = newBoard();
+  state.marked = freshMarks();
   lastCount = 0;
+  hintEl.textContent = DEFAULT_HINT;
   save(); render();
 };
 
 const editBtn = document.getElementById("edit");
 editBtn.onclick = () => {
   editing = !editing;
+  hideTip();
   document.body.classList.toggle("editing", editing);
   editBtn.textContent = editing ? "Done editing" : "Edit squares";
-  document.getElementById("hint").textContent = editing
-    ? "Click into any square to change its text."
-    : "Tap a square to dab it. Tap again to undo.";
+  hintEl.textContent = editing ? "Click into any square to change its text." : DEFAULT_HINT;
   render();
 };
 
