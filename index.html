@@ -136,6 +136,26 @@
   button:hover { background: var(--ink); color: var(--paper); }
   button.primary { background: var(--bingo); border-color: var(--bingo); color: #fff; }
   button.primary:hover { background: #d93a47; }
+  .colors {
+    display: flex;
+    gap: 10px;
+    justify-content: center;
+    align-items: center;
+    margin: 4px 0 10px;
+    font-weight: 700;
+    font-size: 15px;
+  }
+  .swatch {
+    width: 30px;
+    height: 30px;
+    padding: 0;
+    border-radius: 50%;
+    border: 2px solid var(--ink);
+    background: var(--c);
+    cursor: pointer;
+  }
+  .swatch:hover { background: var(--c); transform: scale(1.1); }
+  .swatch[aria-pressed="true"] { box-shadow: 0 0 0 3px var(--paper), 0 0 0 5px var(--ink); }
   .hint { text-align: center; font-size: 13px; color: #666; margin-top: 10px; }
   .editing .cell { cursor: text; }
   .editing .cell .label { outline: 1px dashed #999; padding: 2px; min-width: 60%; }
@@ -148,6 +168,7 @@
   <div class="letters" id="letters"><span>B</span><span>I</span><span>N</span><span>G</span><span>O</span></div>
   <div class="grid" id="grid" role="grid" aria-label="Bingo board"></div>
   <div class="status" id="status" aria-live="polite"></div>
+  <div class="colors" id="colors"><span>Stamp:</span></div>
   <div class="controls">
     <button class="primary" id="reset">New game</button>
     <button id="shuffle">Shuffle board</button>
@@ -182,6 +203,33 @@ for (let i = 0; i < 5; i++) {
   LINES.push([0,1,2,3,4].map(j => j*5+i));      // cols
 }
 LINES.push([0,6,12,18,24], [4,8,12,16,20]);
+
+const COLORS = {
+  green:  "rgba(43, 220, 60, 0.72)",
+  red:    "rgba(255, 60, 70, 0.72)",
+  yellow: "rgba(255, 230, 0, 0.78)",
+  pink:   "rgba(255, 105, 190, 0.72)",
+  purple: "rgba(150, 70, 230, 0.68)"
+};
+if (!COLORS[state.color]) state.color = "yellow";
+
+const colorsEl = document.getElementById("colors");
+function applyColor() {
+  document.documentElement.style.setProperty("--dab", COLORS[state.color]);
+  colorsEl.querySelectorAll(".swatch").forEach(b =>
+    b.setAttribute("aria-pressed", b.dataset.color === state.color));
+}
+Object.keys(COLORS).forEach(name => {
+  const b = document.createElement("button");
+  b.className = "swatch";
+  b.dataset.color = name;
+  b.title = name;
+  b.setAttribute("aria-label", name + " stamp");
+  b.style.setProperty("--c", COLORS[name]);
+  b.onclick = () => { state.color = name; save(); applyColor(); };
+  colorsEl.appendChild(b);
+});
+applyColor();
 
 const grid = document.getElementById("grid");
 const statusEl = document.getElementById("status");
