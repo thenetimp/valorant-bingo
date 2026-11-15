@@ -8,6 +8,7 @@
 <link href="https://fonts.googleapis.com/css2?family=Anton&family=Archivo+Narrow:wght@600;700&display=swap" rel="stylesheet">
 <style>
   :root {
+    color-scheme: light;
     --green: #2bff3b;
     --ink: #111;
     --paper: #fff;
@@ -123,6 +124,7 @@
     padding: 9px 16px;
     border: 2px solid var(--ink);
     background: var(--paper);
+    color: var(--ink);
     border-radius: 4px;
     cursor: pointer;
   }
@@ -149,6 +151,14 @@
   }
   .swatch:hover { background: var(--c); transform: scale(1.1); }
   .swatch[aria-pressed="true"] { box-shadow: 0 0 0 3px var(--paper), 0 0 0 5px var(--ink); }
+  .modes {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 6px;
+    margin: 0 0 10px;
+  }
+  .modes button { padding: 8px 4px; font-size: clamp(12px, 3.4vw, 15px); }
+  .modes button[aria-pressed="true"] { background: var(--ink); color: var(--paper); }
   .hint { text-align: center; font-size: 13px; color: #666; margin-top: 10px; }
   .editing .cell { cursor: text; }
   .editing .cell .label { outline: 1px dashed #999; padding: 2px; min-width: 60%; }
@@ -186,6 +196,7 @@
 <body>
 <main class="card">
   <div class="letters" id="letters"><span>B</span><span>I</span><span>N</span><span>G</span><span>O</span></div>
+  <div class="modes" id="modes" role="group" aria-label="Game mode"></div>
   <div class="grid" id="grid" role="grid" aria-label="Bingo board"></div>
   <div class="status" id="status" aria-live="polite"></div>
   <div class="colors" id="colors"><span>Stamp:</span></div>
@@ -200,7 +211,10 @@
 
 <script>
 // ===== Bingo squares: edit this list =====
-// text: what shows on the square   hint: helper text shown on hover
+// text:  what shows on the square
+// hint:  helper text shown on hover
+// modes: which game modes it can appear in (leave it out = every mode)
+//        "competitive", "unrated", "swiftplay", "spikerush"
 const SQUARES = [
   { text: "1v2 Clutch",        hint: "Win a round as the last one alive against 2 enemies." },
   { text: "1v3+ Clutch",       hint: "Win a round as the last one alive against 3 or more enemies." },
@@ -212,8 +226,8 @@ const SQUARES = [
   { text: "Wallbang Kill",     hint: "Get a kill by shooting through a wall or object." },
   { text: "Kill While Flashed",hint: "Get a kill while blinded by a flash." },
   { text: "Spray Transfer",    hint: "3 or more kills in one continuous spray." },
-  { text: "Eco Win",           hint: "Win a round on a save/eco buy." },
-  { text: "Pistol Round Win",  hint: "Win round 1 or round 13." },
+  { text: "Eco Win",           hint: "Win a round on a save/eco buy.", modes: ["competitive","unrated"] },
+  { text: "Pistol Round Win",  hint: "Win the first round of either half.", modes: ["competitive","unrated","swiftplay"] },
   { text: "Sheriff Headshot",  hint: "Headshot kill with the Sheriff." },
   { text: "Classic Kill",      hint: "Get a kill with the Classic." },
   { text: "Marshal Kill",      hint: "Get a kill with the Marshal." },
@@ -234,24 +248,34 @@ const SQUARES = [
   { text: "Teammate AFK",      hint: "A teammate is AFK for a full round." },
   { text: "Toxic All Chat",    hint: "An enemy is very toxic in all chat." },
   { text: "FF Vote",           hint: "Someone calls a surrender vote." },
-  { text: "Overtime",          hint: "The match goes to overtime (12–12)." },
-  { text: "13–0 / 0–13",       hint: "The match ends 13–0 either way." },
-  { text: "5+ Round Comeback", hint: "Win the match after being down 5 or more rounds." },
+  { text: "Overtime",          hint: "The match goes to overtime at 12–12.", modes: ["competitive","unrated"] },
+  { text: "13–0 / 0–13",       hint: "The match ends 13–0 either way.", modes: ["competitive","unrated"] },
+  { text: "5–0 / 0–5",         hint: "The match ends 5–0 either way.", modes: ["swiftplay"] },
+  { text: "4–0 / 0–4",         hint: "The match ends 4–0 either way.", modes: ["spikerush"] },
+  { text: "Sudden Death",      hint: "The match is tied and goes to a single deciding round.", modes: ["swiftplay","spikerush"] },
+  { text: "5+ Round Comeback", hint: "Win the match after being down 5 or more rounds.", modes: ["competitive","unrated"] },
   { text: "Clutch Rotate",     hint: "A last-second rotate saves the round." },
   { text: "Match MVP",         hint: "Top of the scoreboard when the match ends." }
 ];
 
 // =========================================
 
-const KEY = "valorant-bingo-v3";
+const MODES = {
+  competitive: "Competitive",
+  unrated:     "Unrated",
+  swiftplay:   "Swiftplay",
+  spikerush:   "Spike Rush"
+};
 
-function newBoard() {
-  const pool = SQUARES.slice();
+const KEY = "valorant-bingo-v4";
+
+function newBoard(mode) {
+  const pool = SQUARES.filter(s => !s.modes || s.modes.includes(mode));
   for (let i = pool.length - 1; i > 0; i--) {
     const j = Math.floor(Math.random() * (i + 1));
     [pool[i], pool[j]] = [pool[j], pool[i]];
   }
-  return pool.slice(0, 25).map(s => ({ ...s }));
+  return pool.slice(0, 25).map(({ text, hint }) => ({ text, hint }));
 }
 
 function freshMarks() {
@@ -263,7 +287,8 @@ try {
   const saved = JSON.parse(localStorage.getItem(KEY));
   if (saved && Array.isArray(saved.board) && saved.board.length === 25) state = saved;
 } catch (e) {}
-if (!state) state = { board: newBoard(), marked: freshMarks(), color: "yellow" };
+if (!state) state = { mode: "competitive", board: newBoard("competitive"), marked: freshMarks(), color: "yellow" };
+if (!MODES[state.mode]) state.mode = "competitive";
 
 const save = () => { try { localStorage.setItem(KEY, JSON.stringify(state)); } catch (e) {} };
 
@@ -301,6 +326,28 @@ Object.keys(COLORS).forEach(name => {
   colorsEl.appendChild(b);
 });
 applyColor();
+
+// ----- game modes -----
+const modesEl = document.getElementById("modes");
+function applyMode() {
+  modesEl.querySelectorAll("button").forEach(b =>
+    b.setAttribute("aria-pressed", b.dataset.mode === state.mode));
+}
+Object.entries(MODES).forEach(([key, label]) => {
+  const b = document.createElement("button");
+  b.dataset.mode = key;
+  b.textContent = label;
+  b.onclick = () => {
+    if (state.mode === key) return;
+    state.mode = key;
+    state.board = newBoard(key);
+    state.marked = freshMarks();
+    lastCount = 0;
+    save(); applyMode(); render();
+  };
+  modesEl.appendChild(b);
+});
+applyMode();
 
 // ----- hover tooltip -----
 const tip = document.getElementById("tip");
@@ -391,7 +438,7 @@ document.getElementById("reset").onclick = () => {
 };
 
 document.getElementById("shuffle").onclick = () => {
-  state.board = newBoard();
+  state.board = newBoard(state.mode);
   state.marked = freshMarks();
   lastCount = 0;
   hintEl.textContent = DEFAULT_HINT;
