@@ -160,6 +160,19 @@
   .modes button { padding: 8px 4px; font-size: clamp(12px, 3.4vw, 15px); }
   .modes button[aria-pressed="true"] { background: var(--ink); color: var(--paper); }
   .hint { text-align: center; font-size: 13px; color: #666; margin-top: 10px; }
+  .warn {
+    margin: 10px 0 0;
+    padding: 8px 10px;
+    border: 2px solid #b45309;
+    border-radius: 4px;
+    background: #fef3c7;
+    color: #78350f;
+    font-size: 13px;
+    font-weight: 700;
+    text-align: center;
+    line-height: 1.35;
+  }
+  .warn[hidden] { display: none; }
   .editing .cell { cursor: text; }
   .editing .cell .label { outline: 1px dashed #999; padding: 2px; min-width: 60%; }
   @keyframes pop { 0%{transform:scale(1)} 50%{transform:scale(1.15)} 100%{transform:scale(1)} }
@@ -204,8 +217,10 @@
     <button class="primary" id="shuffle">New board</button>
     <button id="reset">Clear stamps</button>
     <button id="edit">Edit squares</button>
+    <button id="clearEdits" hidden>Reset edits</button>
   </div>
   <p class="hint" id="hint">Tap a square to stamp it. Hover for details.</p>
+  <p class="warn" id="warn" role="alert" hidden></p>
 </main>
 <div class="tip" id="tip" role="tooltip"></div>
 
@@ -234,9 +249,9 @@ const SQUARES = [
   { text: "Ares/Odin Kill",    hint: "Get a kill with the Ares or Odin." },
   { text: "Shorty Kill",       hint: "Get a kill with the Shorty." },
   { text: "Knife Kill",        hint: "Get a melee kill." },
-  { text: "Defuse &lt;1s",     hint: "Defuse the spike with under 1 second left." },
+  { text: "Defuse <1s",        hint: "Defuse the spike with under 1 second left." },
   { text: "Ninja Defuse",      hint: "Defuse the spike while enemies are still alive." },
-  { text: "Plant &lt;5s",      hint: "Plant the spike with under 5 seconds left on the round timer." },
+  { text: "Plant <5s",         hint: "Plant the spike with under 5 seconds left on the round timer." },
   { text: "Win on Time",       hint: "Defenders win because attackers never planted." },
   { text: "Ult Kills 2+",      hint: "One ultimate kills 2 or more enemies." },
   { text: "Wasted Ult",        hint: "An ultimate used with no kills and no impact." },
@@ -255,7 +270,51 @@ const SQUARES = [
   { text: "Sudden Death",      hint: "The match is tied and goes to a single deciding round.", modes: ["swiftplay","spikerush"] },
   { text: "5+ Round Comeback", hint: "Win the match after being down 5 or more rounds.", modes: ["competitive","unrated"] },
   { text: "Clutch Rotate",     hint: "A last-second rotate saves the round." },
-  { text: "Match MVP",         hint: "Top of the scoreboard when the match ends." }
+  { text: "Match MVP",         hint: "Top of the scoreboard when the match ends." },
+
+  // post-plant / spike
+  { text: "Dead Man's Plant",  hint: "All attackers die but the spike still detonates." },
+  { text: "Failed Defuse",     hint: "A defender starts the defuse, dies, and the spike detonates." },
+  { text: "Retake Win",        hint: "Defenders lose the site, retake it, and defuse the spike." },
+  { text: "Fake Defuse Bait",  hint: "A defender fakes a defuse to bait an attacker, then kills them." },
+  { text: "Plant Under Fire",  hint: "Plant the spike while taking damage." },
+
+  // round outcomes
+  { text: "Flawless Round",    hint: "Win a round without losing a single teammate." },
+  { text: "No-Util Round Win", hint: "Win a round without using a single ability." },
+  { text: "Thrifty",           hint: "Win a round while badly out-equipped on money.", modes: ["competitive","unrated"] },
+  { text: "Eco'd on Full Buy", hint: "Lose a round on a full buy to an enemy eco.", modes: ["competitive","unrated"] },
+  { text: "Save Round",        hint: "Keep your weapon by surviving a lost round.", modes: ["competitive","unrated"] },
+  { text: "Both Pistols",      hint: "Win the pistol round in both halves.", modes: ["competitive","unrated","swiftplay"] },
+  { text: "Blew a 5+ Lead",    hint: "Lose the match after leading by 5 or more rounds.", modes: ["competitive","unrated"] },
+
+  // deaths worth laughing at
+  { text: "Fall Damage Death", hint: "Someone dies to fall damage." },
+  { text: "Spike Tick Death",  hint: "Someone dies to the spike detonating." },
+  { text: "Reload Death",      hint: "Die in the middle of a reload." },
+  { text: "Dry Peek Death",    hint: "Die taking a peek with no utility used first." },
+
+  // mechanics
+  { text: "No-Scope Kill",     hint: "Kill with a sniper without scoping in." },
+  { text: "Post-Plant Molly",  hint: "Get a post-plant kill with a molly or incendiary." },
+  { text: "Teleport Kill",     hint: "Get a kill right after an Omen or Yoru teleport." },
+  { text: "Boosted Kill",      hint: "Get a kill from a boost spot on teammate utility." },
+  { text: "Trade Kill",        hint: "Instantly trade a teammate who just died." },
+
+  // gun checks - Spike Rush hands everyone one random gun per round,
+  // so a named weapon may never show up there
+  { text: "Judge Kill",        hint: "Get a kill with the Judge.", modes: ["competitive","unrated","swiftplay"] },
+  { text: "Stinger Kill",      hint: "Get a kill with the Stinger.", modes: ["competitive","unrated","swiftplay"] },
+  { text: "Frenzy Kill",       hint: "Get a kill with the Frenzy.", modes: ["competitive","unrated","swiftplay"] },
+  { text: "Outlaw Kill",       hint: "Get a kill with the Outlaw.", modes: ["competitive","unrated","swiftplay"] },
+  { text: "Bulldog Kill",      hint: "Get a kill with the Bulldog.", modes: ["competitive","unrated","swiftplay"] },
+  { text: "Guardian Headshot", hint: "Headshot kill with the Guardian.", modes: ["competitive","unrated","swiftplay"] },
+
+  // lobby and teammates
+  { text: "Mic Spam",          hint: "A teammate spams music or noise over voice comms." },
+  { text: "Rage Quit",         hint: "A teammate leaves the match and never comes back." },
+  { text: "Duelist No Entry",  hint: "A duelist never takes the first fight." },
+  { text: "Agent Select Dodge", hint: "Someone dodges the lobby in agent select.", modes: ["competitive"] }
 ];
 
 // =========================================
@@ -267,7 +326,31 @@ const MODES = {
   spikerush:   "Spike Rush"
 };
 
-const KEY = "valorant-bingo-v4";
+const KEY = "valorant-bingo";
+const VERSION = 5;
+const LEGACY_KEYS = ["valorant-bingo-v4"];
+
+// ----- storage: report failures instead of swallowing them -----
+const store = {
+  available: false,
+  read(key) {
+    try { return localStorage.getItem(key); } catch (e) { return null; }
+  },
+  write(key, value) {
+    try { localStorage.setItem(key, value); return true; } catch (e) { return false; }
+  },
+  remove(key) {
+    try { localStorage.removeItem(key); } catch (e) {}
+  }
+};
+try {
+  const probe = KEY + "-probe";
+  localStorage.setItem(probe, "1");
+  localStorage.removeItem(probe);
+  store.available = true;
+} catch (e) {
+  store.available = false;
+}
 
 function newBoard(mode) {
   const pool = SQUARES.filter(s => !s.modes || s.modes.includes(mode));
@@ -282,15 +365,70 @@ function freshMarks() {
   return Array(25).fill(false);
 }
 
-let state = null;
-try {
-  const saved = JSON.parse(localStorage.getItem(KEY));
-  if (saved && Array.isArray(saved.board) && saved.board.length === 25) state = saved;
-} catch (e) {}
-if (!state) state = { mode: "competitive", board: newBoard("competitive"), marked: freshMarks(), color: "yellow" };
-if (!MODES[state.mode]) state.mode = "competitive";
+function freshState(mode) {
+  return { version: VERSION, mode, board: newBoard(mode), marked: freshMarks(), color: "yellow", overrides: {} };
+}
 
-const save = () => { try { localStorage.setItem(KEY, JSON.stringify(state)); } catch (e) {} };
+// Repair whatever is salvageable. Returns null only when the board itself is unusable,
+// so a corrupt marks array or junk override map costs you stamps, not the whole board.
+function coerceState(raw) {
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) return null;
+  if (!Array.isArray(raw.board) || raw.board.length !== 25) return null;
+
+  const board = [];
+  for (const sq of raw.board) {
+    if (!sq || typeof sq !== "object" || typeof sq.text !== "string" || !sq.text) return null;
+    board.push({ text: sq.text, hint: typeof sq.hint === "string" ? sq.hint : "" });
+  }
+
+  const marked = Array.isArray(raw.marked) && raw.marked.length === 25
+    ? raw.marked.map(Boolean)
+    : freshMarks();
+
+  // v4 had no overrides map; edits were baked straight into board text and died on shuffle
+  const overrides = {};
+  if (raw.overrides && typeof raw.overrides === "object" && !Array.isArray(raw.overrides)) {
+    for (const [key, value] of Object.entries(raw.overrides)) {
+      if (typeof value === "string" && value.trim()) overrides[key] = value.trim().slice(0, 120);
+    }
+  }
+
+  return {
+    version: VERSION,
+    mode: MODES[raw.mode] ? raw.mode : "competitive",
+    board,
+    marked,
+    color: raw.color,
+    overrides
+  };
+}
+
+function loadState() {
+  for (const key of [KEY].concat(LEGACY_KEYS)) {
+    const text = store.read(key);
+    if (!text) continue;
+    let parsed;
+    try { parsed = JSON.parse(text); } catch (e) { continue; }
+    const migrated = coerceState(parsed);
+    if (migrated) return { state: migrated, from: key };
+  }
+  return { state: null, from: null };
+}
+
+const loaded = loadState();
+let state = loaded.state || freshState("competitive");
+const needsMigration = loaded.from !== null && loaded.from !== KEY;
+
+const SAVE_FAILED = "Progress can't be saved in this browser (private mode, or storage is full). Your board will reset if you reload.";
+let warnedOnce = false;
+
+const save = () => {
+  state.version = VERSION;
+  if (store.write(KEY, JSON.stringify(state))) return;
+  if (warnedOnce) return;
+  warnedOnce = true;
+  showWarn(SAVE_FAILED);
+};
 
 const LINES = [];
 for (let i = 0; i < 5; i++) {
@@ -367,8 +505,14 @@ const grid = document.getElementById("grid");
 const statusEl = document.getElementById("status");
 const hintEl = document.getElementById("hint");
 const DEFAULT_HINT = "Tap a square to stamp it. Hover for details.";
+const warnEl = document.getElementById("warn");
+function showWarn(msg) { warnEl.textContent = msg; warnEl.hidden = false; }
+
+function wonLines() { return LINES.filter(line => line.every(i => state.marked[i])); }
+
 let editing = false;
-let lastCount = 0;
+// seeded from saved marks so reloading a winning board doesn't replay the pop
+let lastCount = wonLines().length;
 
 function render() {
   grid.innerHTML = "";
@@ -385,10 +529,16 @@ function render() {
     c.style.setProperty("--dy", ((r % 3) - 1) * 3 + "px");
     const l = document.createElement("span");
     l.className = "label";
-    l.innerHTML = sq.text;
+    l.textContent = labelFor(sq);
     if (editing) {
       l.contentEditable = "true";
-      l.addEventListener("input", () => { state.board[i].text = l.innerHTML; save(); });
+      // store text, never markup: pasted HTML can't survive into a saved board
+      l.addEventListener("paste", e => {
+        e.preventDefault();
+        const text = (e.clipboardData || window.clipboardData).getData("text");
+        document.execCommand("insertText", false, text.replace(/\s+/g, " "));
+      });
+      l.addEventListener("input", () => setOverride(sq.text, l.textContent));
     }
     c.appendChild(l);
 
@@ -409,6 +559,17 @@ function render() {
   check();
 }
 
+// Edits are keyed by the square's original text, so they follow that square
+// onto every future board instead of dying with the current one.
+function labelFor(sq) { return state.overrides[sq.text] || sq.text; }
+
+function setOverride(original, text) {
+  const clean = text.replace(/\s+/g, " ").trim().slice(0, 120);
+  if (!clean || clean === original) delete state.overrides[original];
+  else state.overrides[original] = clean;
+  save();
+}
+
 function toggle(i) {
   if (editing) return;
   hideTip();
@@ -418,7 +579,7 @@ function toggle(i) {
 }
 
 function check() {
-  const won = LINES.filter(line => line.every(i => state.marked[i]));
+  const won = wonLines();
   const cells = grid.children;
   won.flat().forEach(i => cells[i].classList.add("win"));
   const n = won.length;
@@ -446,14 +607,31 @@ document.getElementById("shuffle").onclick = () => {
 };
 
 const editBtn = document.getElementById("edit");
+const clearEditsBtn = document.getElementById("clearEdits");
+
 editBtn.onclick = () => {
   editing = !editing;
   hideTip();
   document.body.classList.toggle("editing", editing);
   editBtn.textContent = editing ? "Done editing" : "Edit squares";
-  hintEl.textContent = editing ? "Click into any square to change its text." : DEFAULT_HINT;
+  clearEditsBtn.hidden = !editing;
+  hintEl.textContent = editing
+    ? "Click into any square to change its text. Edits stick to that square on future boards."
+    : DEFAULT_HINT;
   render();
 };
+
+clearEditsBtn.onclick = () => {
+  state.overrides = {};
+  save();
+  render();
+};
+
+if (needsMigration) {
+  save();
+  LEGACY_KEYS.forEach(store.remove, store);
+}
+if (!store.available) showWarn(SAVE_FAILED);
 
 render();
 </script>
