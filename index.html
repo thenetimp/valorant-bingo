@@ -5,6 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Valorant Bingo</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Anton&family=Archivo+Narrow:wght@600;700&display=swap" rel="stylesheet">
 <style>
   :root {
@@ -14,6 +15,9 @@
     --paper: #fff;
     --dab: rgba(255, 230, 0, 0.78);
     --bingo: #ff4655;
+    /* swapped per language; the BINGO row always stays Anton since it's Latin */
+    --ui-font: 'Archivo Narrow', 'Arial Narrow', sans-serif;
+    --display-font: 'Anton', sans-serif;
   }
   * { box-sizing: border-box; }
   body {
@@ -21,7 +25,7 @@
     min-height: 100vh;
     background: #0f1923;
     background-image: radial-gradient(circle at 20% 0%, #1f2d3a 0%, #0f1923 60%);
-    font-family: 'Archivo Narrow', 'Arial Narrow', sans-serif;
+    font-family: var(--ui-font);
     display: flex;
     justify-content: center;
     padding: 24px 12px 40px;
@@ -31,21 +35,29 @@
     background: var(--paper);
     width: 100%;
     max-width: 560px;
-    padding: 18px 18px 22px;
+    padding: 14px 18px 22px;
     border-radius: 6px;
     box-shadow: 0 20px 50px rgba(0,0,0,.5);
   }
-  h1 {
-    margin: 0;
-    text-align: center;
-    font-family: 'Anton', sans-serif;
-    font-weight: 400;
-    font-size: clamp(26px, 7vw, 40px);
-    color: var(--green);
-    -webkit-text-stroke: 2px #000;
-    paint-order: stroke fill;
-    letter-spacing: .5px;
-    line-height: 1.1;
+  .topbar {
+    display: flex;
+    justify-content: flex-end;
+    align-items: center;
+    gap: 6px;
+    font-size: 13px;
+    font-weight: 700;
+    color: #555;
+  }
+  .topbar select {
+    font-family: inherit;
+    font-size: 14px;
+    font-weight: 700;
+    padding: 3px 6px;
+    border: 2px solid var(--ink);
+    border-radius: 4px;
+    background: var(--paper);
+    color: var(--ink);
+    cursor: pointer;
   }
   .letters {
     display: grid;
@@ -54,7 +66,7 @@
     font-family: 'Anton', sans-serif;
     font-size: clamp(44px, 14vw, 78px);
     line-height: 1.05;
-    margin: 4px 0 6px;
+    margin: 2px 0 6px;
   }
   .letters span { transition: color .3s, transform .3s; }
   .letters span.lit { color: var(--bingo); transform: scale(1.08); }
@@ -83,8 +95,10 @@
   }
   .cell:hover { background: #f4f4f4; }
   .cell:focus-visible { outline: 3px solid #3b82f6; outline-offset: -3px; }
-  .cell small { display: block; font-size: .72em; font-weight: 600; }
-  .cell .label { position: relative; z-index: 2; }
+  .cell .label { position: relative; z-index: 2; overflow-wrap: anywhere; }
+  /* long labels (German compounds, Japanese katakana strings) need to shrink to fit */
+  .cell.long .label { font-size: .84em; line-height: 1.15; }
+  .cell.longest .label { font-size: .7em; line-height: 1.2; }
   .cell::after {
     content: "";
     position: absolute;
@@ -105,7 +119,7 @@
     text-align: center;
     min-height: 1.6em;
     margin: 12px 0 4px;
-    font-family: 'Anton', sans-serif;
+    font-family: var(--display-font);
     font-size: 22px;
     letter-spacing: 1px;
     color: var(--bingo);
@@ -157,7 +171,12 @@
     gap: 6px;
     margin: 0 0 10px;
   }
-  .modes button { padding: 8px 4px; font-size: clamp(12px, 3.4vw, 15px); }
+  .modes button {
+    padding: 8px 4px;
+    font-size: clamp(11px, 3vw, 15px);
+    line-height: 1.15;
+    overflow-wrap: anywhere;
+  }
   .modes button[aria-pressed="true"] { background: var(--ink); color: var(--paper); }
   .hint { text-align: center; font-size: 13px; color: #666; margin-top: 10px; }
   .warn {
@@ -208,11 +227,15 @@
 </head>
 <body>
 <main class="card">
+  <div class="topbar">
+    <label for="lang" id="langLabel">Language</label>
+    <select id="lang"></select>
+  </div>
   <div class="letters" id="letters"><span>B</span><span>I</span><span>N</span><span>G</span><span>O</span></div>
   <div class="modes" id="modes" role="group" aria-label="Game mode"></div>
   <div class="grid" id="grid" role="grid" aria-label="Bingo board"></div>
   <div class="status" id="status" aria-live="polite"></div>
-  <div class="colors" id="colors"><span>Stamp:</span></div>
+  <div class="colors" id="colors"><span id="stampLabel">Stamp:</span></div>
   <div class="controls">
     <button class="primary" id="shuffle">New board</button>
     <button id="reset">Clear stamps</button>
@@ -226,100 +249,248 @@
 
 <script>
 // ===== Bingo squares: edit this list =====
-// text:  what shows on the square
-// hint:  helper text shown on hover
+// id:    stable key. NEVER change one once it ships - saved boards, saved edits and
+//        every translation are keyed by it.
+// text:  English label (also the fallback for any language missing a translation)
+// hint:  English helper text shown on hover
 // modes: which game modes it can appear in (leave it out = every mode)
 //        "competitive", "unrated", "swiftplay", "spikerush"
 const SQUARES = [
-  { text: "1v2 Clutch",        hint: "Win a round as the last one alive against 2 enemies." },
-  { text: "1v3+ Clutch",       hint: "Win a round as the last one alive against 3 or more enemies." },
-  { text: "Personal Ace",      hint: "One player kills all 5 enemies in a single round." },
-  { text: "Team Ace",          hint: "All 5 teammates each get a kill in the same round." },
-  { text: "Personal 4K",       hint: "One player gets 4 kills in a single round." },
-  { text: "Op One-Tap",        hint: "One-shot kill with the Operator." },
-  { text: "Collateral",        hint: "Kill 2 or more enemies with a single bullet." },
-  { text: "Wallbang Kill",     hint: "Get a kill by shooting through a wall or object." },
-  { text: "Kill While Flashed",hint: "Get a kill while blinded by a flash." },
-  { text: "Spray Transfer",    hint: "3 or more kills in one continuous spray." },
-  { text: "Eco Win",           hint: "Win a round on a save/eco buy.", modes: ["competitive","unrated"] },
-  { text: "Pistol Round Win",  hint: "Win the first round of either half.", modes: ["competitive","unrated","swiftplay"] },
-  { text: "Sheriff Headshot",  hint: "Headshot kill with the Sheriff." },
-  { text: "Classic Kill",      hint: "Get a kill with the Classic." },
-  { text: "Marshal Kill",      hint: "Get a kill with the Marshal." },
-  { text: "Ares/Odin Kill",    hint: "Get a kill with the Ares or Odin." },
-  { text: "Shorty Kill",       hint: "Get a kill with the Shorty." },
-  { text: "Knife Kill",        hint: "Get a melee kill." },
-  { text: "Defuse <1s",        hint: "Defuse the spike with under 1 second left." },
-  { text: "Ninja Defuse",      hint: "Defuse the spike while enemies are still alive." },
-  { text: "Plant <5s",         hint: "Plant the spike with under 5 seconds left on the round timer." },
-  { text: "Win on Time",       hint: "Defenders win because attackers never planted." },
-  { text: "Ult Kills 2+",      hint: "One ultimate kills 2 or more enemies." },
-  { text: "Wasted Ult",        hint: "An ultimate used with no kills and no impact." },
-  { text: "Recon Dart 3+",     hint: "One Sova recon bolt reveals 3 or more enemies." },
-  { text: "Instalock Reyna",   hint: "Someone locks Reyna instantly in agent select." },
-  { text: "No Initiator",      hint: "The team has no initiator." },
-  { text: "3+ Duelists",       hint: "The team runs 3 or more duelists." },
-  { text: "Someone No Mic",    hint: "A teammate never uses voice comms." },
-  { text: "Teammate AFK",      hint: "A teammate is AFK for a full round." },
-  { text: "Toxic All Chat",    hint: "An enemy is very toxic in all chat." },
-  { text: "FF Vote",           hint: "Someone calls a surrender vote." },
-  { text: "Overtime",          hint: "The match goes to overtime at 12–12.", modes: ["competitive","unrated"] },
-  { text: "13–0 / 0–13",       hint: "The match ends 13–0 either way.", modes: ["competitive","unrated"] },
-  { text: "5–0 / 0–5",         hint: "The match ends 5–0 either way.", modes: ["swiftplay"] },
-  { text: "4–0 / 0–4",         hint: "The match ends 4–0 either way.", modes: ["spikerush"] },
-  { text: "Sudden Death",      hint: "The match is tied and goes to a single deciding round.", modes: ["swiftplay","spikerush"] },
-  { text: "5+ Round Comeback", hint: "Win the match after being down 5 or more rounds.", modes: ["competitive","unrated"] },
-  { text: "Clutch Rotate",     hint: "A last-second rotate saves the round." },
-  { text: "Match MVP",         hint: "Top of the scoreboard when the match ends." },
+  { id: "clutch-1v2",         text: "1v2 Clutch",        hint: "Win a round as the last one alive against 2 enemies." },
+  { id: "clutch-1v3",         text: "1v3+ Clutch",       hint: "Win a round as the last one alive against 3 or more enemies." },
+  { id: "ace",                text: "Personal Ace",      hint: "One player kills all 5 enemies in a single round." },
+  { id: "team-ace",           text: "Team Ace",          hint: "All 5 teammates each get a kill in the same round." },
+  { id: "quad-kill",          text: "Personal 4K",       hint: "One player gets 4 kills in a single round." },
+  { id: "op-one-tap",         text: "Op One-Tap",        hint: "One-shot kill with the Operator." },
+  { id: "collateral",         text: "Collateral",        hint: "Kill 2 or more enemies with a single bullet." },
+  { id: "wallbang",           text: "Wallbang Kill",     hint: "Get a kill by shooting through a wall or object." },
+  { id: "kill-while-flashed", text: "Kill While Flashed",hint: "Get a kill while blinded by a flash." },
+  { id: "spray-transfer",     text: "Spray Transfer",    hint: "3 or more kills in one continuous spray." },
+  { id: "eco-win",            text: "Eco Win",           hint: "Win a round on a save/eco buy.", modes: ["competitive","unrated"] },
+  { id: "pistol-win",         text: "Pistol Round Win",  hint: "Win the first round of either half.", modes: ["competitive","unrated","swiftplay"] },
+  { id: "sheriff-headshot",   text: "Sheriff Headshot",  hint: "Headshot kill with the Sheriff." },
+  { id: "classic-kill",       text: "Classic Kill",      hint: "Get a kill with the Classic." },
+  { id: "marshal-kill",       text: "Marshal Kill",      hint: "Get a kill with the Marshal." },
+  { id: "ares-odin-kill",     text: "Ares/Odin Kill",    hint: "Get a kill with the Ares or Odin." },
+  { id: "shorty-kill",        text: "Shorty Kill",       hint: "Get a kill with the Shorty." },
+  { id: "knife-kill",         text: "Knife Kill",        hint: "Get a melee kill." },
+  { id: "defuse-sub-1s",      text: "Defuse <1s",        hint: "Defuse the spike with under 1 second left." },
+  { id: "ninja-defuse",       text: "Ninja Defuse",      hint: "Defuse the spike while enemies are still alive." },
+  { id: "plant-sub-5s",       text: "Plant <5s",         hint: "Plant the spike with under 5 seconds left on the round timer." },
+  { id: "win-on-time",        text: "Win on Time",       hint: "Defenders win because attackers never planted." },
+  { id: "ult-multikill",      text: "Ult Kills 2+",      hint: "One ultimate kills 2 or more enemies." },
+  { id: "wasted-ult",         text: "Wasted Ult",        hint: "An ultimate used with no kills and no impact." },
+  { id: "recon-3",            text: "Recon Dart 3+",     hint: "One Sova recon bolt reveals 3 or more enemies." },
+  { id: "instalock-reyna",    text: "Instalock Reyna",   hint: "Someone locks Reyna instantly in agent select." },
+  { id: "no-initiator",       text: "No Initiator",      hint: "The team has no initiator." },
+  { id: "three-duelists",     text: "3+ Duelists",       hint: "The team runs 3 or more duelists." },
+  { id: "no-mic",             text: "Voice Chat Off",    hint: "A teammate has voice chat turned off and only ever types." },
+  { id: "never-comms",        text: "Never Comms",       hint: "A teammate is in voice but never says a word all match." },
+  { id: "afk",                text: "Teammate AFK",      hint: "A teammate is AFK for a full round." },
+  { id: "toxic-all-chat",     text: "Toxic All Chat",    hint: "An enemy is very toxic in all chat." },
+  { id: "ff-vote",            text: "FF Vote",           hint: "Someone calls a surrender vote." },
+  { id: "overtime",           text: "Overtime",          hint: "The match goes to overtime at 12-12.", modes: ["competitive","unrated"] },
+  { id: "shutout-13",         text: "13-0 / 0-13",       hint: "The match ends 13-0 either way.", modes: ["competitive","unrated"] },
+  { id: "shutout-5",          text: "5-0 / 0-5",         hint: "The match ends 5-0 either way.", modes: ["swiftplay"] },
+  { id: "shutout-4",          text: "4-0 / 0-4",         hint: "The match ends 4-0 either way.", modes: ["spikerush"] },
+  { id: "sudden-death",       text: "Sudden Death",      hint: "The match is tied and goes to a single deciding round.", modes: ["swiftplay","spikerush"] },
+  { id: "comeback-5",         text: "5+ Round Comeback", hint: "Win the match after being down 5 or more rounds.", modes: ["competitive","unrated"] },
+  { id: "clutch-rotate",      text: "Clutch Rotate",     hint: "A last-second rotate saves the round." },
+  { id: "match-mvp",          text: "Match MVP",         hint: "Top of the scoreboard when the match ends." },
 
   // post-plant / spike
-  { text: "Dead Man's Plant",  hint: "All attackers die but the spike still detonates." },
-  { text: "Failed Defuse",     hint: "A defender starts the defuse, dies, and the spike detonates." },
-  { text: "Retake Win",        hint: "Defenders lose the site, retake it, and defuse the spike." },
-  { text: "Fake Defuse Bait",  hint: "A defender fakes a defuse to bait an attacker, then kills them." },
-  { text: "Plant Under Fire",  hint: "Plant the spike while taking damage." },
+  { id: "dead-mans-plant",    text: "Dead Man's Plant",  hint: "All attackers die but the spike still detonates." },
+  { id: "failed-defuse",      text: "Failed Defuse",     hint: "A defender starts the defuse, dies, and the spike detonates." },
+  { id: "retake-win",         text: "Retake Win",        hint: "Defenders lose the site, retake it, and defuse the spike." },
+  { id: "fake-defuse-bait",   text: "Fake Defuse Bait",  hint: "A defender fakes a defuse to bait an attacker, then kills them." },
+  { id: "plant-under-fire",   text: "Plant Under Fire",  hint: "Plant the spike while taking damage." },
 
   // round outcomes
-  { text: "Flawless Round",    hint: "Win a round without losing a single teammate." },
-  { text: "No-Util Round Win", hint: "Win a round without using a single ability." },
-  { text: "Thrifty",           hint: "Win a round while badly out-equipped on money.", modes: ["competitive","unrated"] },
-  { text: "Eco'd on Full Buy", hint: "Lose a round on a full buy to an enemy eco.", modes: ["competitive","unrated"] },
-  { text: "Save Round",        hint: "Keep your weapon by surviving a lost round.", modes: ["competitive","unrated"] },
-  { text: "Both Pistols",      hint: "Win the pistol round in both halves.", modes: ["competitive","unrated","swiftplay"] },
-  { text: "Blew a 5+ Lead",    hint: "Lose the match after leading by 5 or more rounds.", modes: ["competitive","unrated"] },
+  { id: "flawless",           text: "Flawless Round",    hint: "Win a round without losing a single teammate." },
+  { id: "no-util-win",        text: "No-Util Round Win", hint: "Win a round without using a single ability." },
+  { id: "thrifty",            text: "Thrifty",           hint: "Win a round while badly out-equipped on money.", modes: ["competitive","unrated"] },
+  { id: "ecod-on-full-buy",   text: "Eco'd on Full Buy", hint: "Lose a round on a full buy to an enemy eco.", modes: ["competitive","unrated"] },
+  { id: "save-round",         text: "Save Round",        hint: "Keep your weapon by surviving a lost round.", modes: ["competitive","unrated"] },
+  { id: "both-pistols",       text: "Both Pistols",      hint: "Win the pistol round in both halves.", modes: ["competitive","unrated","swiftplay"] },
+  { id: "blew-a-lead",        text: "Blew a 5+ Lead",    hint: "Lose the match after leading by 5 or more rounds.", modes: ["competitive","unrated"] },
 
   // deaths worth laughing at
-  { text: "Fall Damage Death", hint: "Someone dies to fall damage." },
-  { text: "Spike Tick Death",  hint: "Someone dies to the spike detonating." },
-  { text: "Reload Death",      hint: "Die in the middle of a reload." },
-  { text: "Dry Peek Death",    hint: "Die taking a peek with no utility used first." },
+  { id: "fall-damage-death",  text: "Fall Damage Death", hint: "Someone dies to fall damage." },
+  { id: "spike-tick-death",   text: "Spike Tick Death",  hint: "Someone dies to the spike detonating." },
+  { id: "reload-death",       text: "Reload Death",      hint: "Die in the middle of a reload." },
+  { id: "dry-peek-death",     text: "Dry Peek Death",    hint: "Die taking a peek with no utility used first." },
 
   // mechanics
-  { text: "No-Scope Kill",     hint: "Kill with a sniper without scoping in." },
-  { text: "Post-Plant Molly",  hint: "Get a post-plant kill with a molly or incendiary." },
-  { text: "Teleport Kill",     hint: "Get a kill right after an Omen or Yoru teleport." },
-  { text: "Boosted Kill",      hint: "Get a kill from a boost spot on teammate utility." },
-  { text: "Trade Kill",        hint: "Instantly trade a teammate who just died." },
+  { id: "no-scope-kill",      text: "No-Scope Kill",     hint: "Kill with a sniper without scoping in." },
+  { id: "post-plant-molly",   text: "Post-Plant Molly",  hint: "Get a post-plant kill with a molly or incendiary." },
+  { id: "teleport-kill",      text: "Teleport Kill",     hint: "Get a kill right after an Omen or Yoru teleport." },
+  { id: "boosted-kill",       text: "Boosted Kill",      hint: "Get a kill from a boost spot on teammate utility." },
+  { id: "trade-kill",         text: "Trade Kill",        hint: "Instantly trade a teammate who just died." },
 
   // gun checks - Spike Rush hands everyone one random gun per round,
   // so a named weapon may never show up there
-  { text: "Judge Kill",        hint: "Get a kill with the Judge.", modes: ["competitive","unrated","swiftplay"] },
-  { text: "Stinger Kill",      hint: "Get a kill with the Stinger.", modes: ["competitive","unrated","swiftplay"] },
-  { text: "Frenzy Kill",       hint: "Get a kill with the Frenzy.", modes: ["competitive","unrated","swiftplay"] },
-  { text: "Outlaw Kill",       hint: "Get a kill with the Outlaw.", modes: ["competitive","unrated","swiftplay"] },
-  { text: "Bulldog Kill",      hint: "Get a kill with the Bulldog.", modes: ["competitive","unrated","swiftplay"] },
-  { text: "Guardian Headshot", hint: "Headshot kill with the Guardian.", modes: ["competitive","unrated","swiftplay"] },
+  { id: "judge-kill",         text: "Judge Kill",        hint: "Get a kill with the Judge.", modes: ["competitive","unrated","swiftplay"] },
+  { id: "stinger-kill",       text: "Stinger Kill",      hint: "Get a kill with the Stinger.", modes: ["competitive","unrated","swiftplay"] },
+  { id: "frenzy-kill",        text: "Frenzy Kill",       hint: "Get a kill with the Frenzy.", modes: ["competitive","unrated","swiftplay"] },
+  { id: "outlaw-kill",        text: "Outlaw Kill",       hint: "Get a kill with the Outlaw.", modes: ["competitive","unrated","swiftplay"] },
+  { id: "bulldog-kill",       text: "Bulldog Kill",      hint: "Get a kill with the Bulldog.", modes: ["competitive","unrated","swiftplay"] },
+  { id: "guardian-headshot",  text: "Guardian Headshot", hint: "Headshot kill with the Guardian.", modes: ["competitive","unrated","swiftplay"] },
 
   // lobby and teammates
-  { text: "Mic Spam",          hint: "A teammate spams music or noise over voice comms." },
-  { text: "Rage Quit",         hint: "A teammate leaves the match and never comes back." },
-  { text: "Duelist No Entry",  hint: "A duelist never takes the first fight." },
-  { text: "Agent Select Dodge", hint: "Someone dodges the lobby in agent select.", modes: ["competitive"] }
+  { id: "mic-spam",           text: "Mic Spam",          hint: "A teammate spams music or noise over voice comms." },
+  { id: "rage-quit",          text: "Rage Quit",         hint: "A teammate leaves the match and never comes back." },
+  { id: "duelist-no-entry",   text: "Duelist No Entry",  hint: "A duelist never takes the first fight." },
+  { id: "agent-select-dodge", text: "Agent Select Dodge",hint: "Someone dodges the lobby in agent select." }
 ];
+
+// ===== Languages =====
+// To add one: copy the "ja" block, change the key, and translate. Anything you leave
+// out falls back to English, so a half-finished language is still usable.
+//   label:   shown in the language picker, in its own language
+//   font:    only needed when the default Latin fonts can't render the script.
+//            href is injected on demand so other languages don't pay for it.
+//   ui:      interface strings. {n} / {color} are substituted at runtime.
+//   squares: per-square overrides keyed by SQUARES id
+const LOCALES = {
+  en: {
+    label: "English",
+    ui: {
+      docTitle: "Valorant Bingo",
+      langLabel: "Language",
+      modeGroup: "Game mode",
+      gridLabel: "Bingo board",
+      stampLabel: "Stamp:",
+      stampAria: "{color} stamp",
+      colors: { green: "green", red: "red", yellow: "yellow", pink: "pink", purple: "purple" },
+      newBoard: "New board",
+      clearStamps: "Clear stamps",
+      editSquares: "Edit squares",
+      doneEditing: "Done editing",
+      resetEdits: "Reset edits",
+      hintDefault: "Tap a square to stamp it. Hover for details.",
+      hintEditing: "Click into any square to change its text. Edits stick to that square on future boards.",
+      bingo: "BINGO!",
+      bingoMulti: "{n}× BINGO!",
+      blackout: "BLACKOUT! 🐸",
+      saveFailed: "Progress can't be saved in this browser (private mode, or storage is full). Your board will reset if you reload."
+    }
+  },
+
+  ja: {
+    label: "日本語",
+    // Anton and Archivo Narrow ship Latin only, so Japanese needs its own face.
+    font: {
+      href: "https://fonts.googleapis.com/css2?family=Noto+Sans+JP:wght@700;900&display=swap",
+      ui: "'Noto Sans JP', 'Archivo Narrow', sans-serif",
+      display: "'Noto Sans JP', 'Anton', sans-serif"
+    },
+    ui: {
+      docTitle: "VALORANT ビンゴ",
+      langLabel: "言語",
+      modeGroup: "ゲームモード",
+      gridLabel: "ビンゴボード",
+      stampLabel: "スタンプ:",
+      stampAria: "{color}のスタンプ",
+      colors: { green: "緑", red: "赤", yellow: "黄", pink: "ピンク", purple: "紫" },
+      newBoard: "新しいボード",
+      clearStamps: "スタンプを消す",
+      editSquares: "マスを編集",
+      doneEditing: "編集を終了",
+      resetEdits: "編集をリセット",
+      hintDefault: "マスをタップしてスタンプ。詳細はホバーで表示。",
+      hintEditing: "マスをクリックしてテキストを変更。編集内容は次のボードにも引き継がれます。",
+      bingo: "ビンゴ！",
+      bingoMulti: "{n}個のビンゴ！",
+      blackout: "ブラックアウト！🐸",
+      saveFailed: "このブラウザでは進行状況を保存できません（プライベートモード、または容量不足）。再読み込みするとボードがリセットされます。"
+    },
+    modes: {
+      competitive: "コンペティティブ",
+      unrated: "アンレート",
+      swiftplay: "スウィフトプレイ",
+      spikerush: "スパイクラッシュ"
+    },
+    squares: {
+      "clutch-1v2":         { text: "1v2クラッチ", hint: "最後の生存者として敵2人を倒してラウンドを取る。" },
+      "clutch-1v3":         { text: "1v3+クラッチ", hint: "最後の生存者として敵3人以上を倒してラウンドを取る。" },
+      "ace":                { text: "エース", hint: "1人のプレイヤーが1ラウンドで敵5人を倒す。" },
+      "team-ace":           { text: "チームエース", hint: "同じラウンドで味方5人全員がキルを取る。" },
+      "quad-kill":          { text: "4キル", hint: "1人のプレイヤーが1ラウンドで4キルを取る。" },
+      "op-one-tap":         { text: "オペレーターで一撃", hint: "オペレーターの一発で敵を倒す。" },
+      "collateral":         { text: "コラテラル", hint: "1発の弾で敵2人以上を倒す。" },
+      "wallbang":           { text: "ウォールバンキル", hint: "壁やオブジェクト越しに撃ってキルを取る。" },
+      "kill-while-flashed": { text: "フラッシュ中にキル", hint: "フラッシュで視界を奪われた状態でキルを取る。" },
+      "spray-transfer":     { text: "スプレートランスファー", hint: "1回の連射で3キル以上を取る。" },
+      "eco-win":            { text: "エコラウンド勝利", hint: "セーブまたはエコ購入でラウンドを取る。" },
+      "pistol-win":         { text: "ピストルラウンド勝利", hint: "前半または後半の第1ラウンドを取る。" },
+      "sheriff-headshot":   { text: "シェリフでHS", hint: "シェリフのヘッドショットでキルを取る。" },
+      "classic-kill":       { text: "クラシックでキル", hint: "クラシックでキルを取る。" },
+      "marshal-kill":       { text: "マーシャルでキル", hint: "マーシャルでキルを取る。" },
+      "ares-odin-kill":     { text: "アレス/オーディンでキル", hint: "アレスまたはオーディンでキルを取る。" },
+      "shorty-kill":        { text: "ショーティでキル", hint: "ショーティでキルを取る。" },
+      "knife-kill":         { text: "ナイフキル", hint: "近接攻撃でキルを取る。" },
+      "defuse-sub-1s":      { text: "残り1秒未満で解除", hint: "残り1秒未満でスパイクを解除する。" },
+      "ninja-defuse":       { text: "ニンジャ解除", hint: "敵が生存している状態でスパイクを解除する。" },
+      "plant-sub-5s":       { text: "残り5秒未満で設置", hint: "ラウンドタイマー残り5秒未満でスパイクを設置する。" },
+      "win-on-time":        { text: "時間切れで勝利", hint: "アタッカーが設置できず、ディフェンダーが勝利する。" },
+      "ult-multikill":      { text: "アルティメットで2キル以上", hint: "1回のアルティメットで敵2人以上を倒す。" },
+      "wasted-ult":         { text: "アルティ無駄打ち", hint: "キルも影響もないままアルティメットを使う。" },
+      "recon-3":            { text: "リコンボルトで3人以上", hint: "ソーヴァのリコンボルト1本で敵3人以上を露出させる。" },
+      "instalock-reyna":    { text: "レイナ即ロック", hint: "エージェント選択で誰かが即レイナをロックする。" },
+      "no-initiator":       { text: "イニシエーター不在", hint: "チームにイニシエーターがいない。" },
+      "three-duelists":     { text: "デュエリスト3人以上", hint: "チームにデュエリストが3人以上いる。" },
+      "no-mic":             { text: "ボイスチャットオフ", hint: "味方がボイスチャットをオフにしていて、チャット入力だけで伝えてくる。" },
+      "never-comms":        { text: "無言の味方", hint: "味方がボイスに参加しているのに一言も話さない。" },
+      "afk":                { text: "味方AFK", hint: "味方が1ラウンド丸ごとAFKになる。" },
+      "toxic-all-chat":     { text: "全体チャットで煽り", hint: "敵が全体チャットで激しく煽ってくる。" },
+      "ff-vote":            { text: "降参投票", hint: "誰かが降参投票を始める。" },
+      "overtime":           { text: "オーバータイム", hint: "12-12でオーバータイムに入る。" },
+      "shutout-13":         { text: "13-0 / 0-13", hint: "どちらかが13-0で試合が終わる。" },
+      "shutout-5":          { text: "5-0 / 0-5", hint: "どちらかが5-0で試合が終わる。" },
+      "shutout-4":          { text: "4-0 / 0-4", hint: "どちらかが4-0で試合が終わる。" },
+      "sudden-death":       { text: "サドンデス", hint: "同点で決着の1ラウンドに入る。" },
+      "comeback-5":         { text: "5ラウンド差からの逆転", hint: "5ラウンド以上のビハインドから試合に勝つ。" },
+      "clutch-rotate":      { text: "ギリギリのローテート", hint: "直前のローテートでラウンドを守り切る。" },
+      "match-mvp":          { text: "マッチMVP", hint: "試合終了時にスコアボードの最上位にいる。" },
+      "dead-mans-plant":    { text: "死者の設置", hint: "アタッカー全員が倒れてもスパイクが爆発する。" },
+      "failed-defuse":      { text: "解除失敗", hint: "ディフェンダーが解除を始めたが倒され、スパイクが爆発する。" },
+      "retake-win":         { text: "リテイク成功", hint: "サイトを取られたディフェンダーがリテイクして解除する。" },
+      "fake-defuse-bait":   { text: "フェイク解除で釣る", hint: "ディフェンダーが解除音で敵を釣り、そのままキルを取る。" },
+      "plant-under-fire":   { text: "被弾しながら設置", hint: "ダメージを受けながらスパイクを設置する。" },
+      "flawless":           { text: "フローレス", hint: "味方を1人も失わずにラウンドを取る。" },
+      "no-util-win":        { text: "アビリティ無しで勝利", hint: "アビリティを一切使わずにラウンドを取る。" },
+      "thrifty":            { text: "スリフティ", hint: "装備で大きく劣る状態でラウンドを取る。" },
+      "ecod-on-full-buy":   { text: "フルバイでエコ負け", hint: "フルバイなのに敵のエコラウンドに負ける。" },
+      "save-round":         { text: "セーブラウンド", hint: "負けラウンドで生き残って武器を保持する。" },
+      "both-pistols":       { text: "両ピストル勝利", hint: "前半と後半のピストルラウンドを両方取る。" },
+      "blew-a-lead":        { text: "5点差を逆転される", hint: "5ラウンド以上リードしながら試合に負ける。" },
+      "fall-damage-death":  { text: "落下ダメージ死", hint: "誰かが落下ダメージで死ぬ。" },
+      "spike-tick-death":   { text: "スパイク爆発死", hint: "誰かがスパイクの爆発で死ぬ。" },
+      "reload-death":       { text: "リロード中に死亡", hint: "リロード中に倒される。" },
+      "dry-peek-death":     { text: "ドライピークで死亡", hint: "アビリティを使わずにピークして倒される。" },
+      "no-scope-kill":      { text: "ノースコープキル", hint: "スコープを覗かずにスナイパーでキルを取る。" },
+      "post-plant-molly":   { text: "設置後の焼夷キル", hint: "設置後にモロトフや焼夷弾でキルを取る。" },
+      "teleport-kill":      { text: "テレポ直後キル", hint: "オーメンまたはヨルのテレポート直後にキルを取る。" },
+      "boosted-kill":       { text: "ブースト位置からキル", hint: "味方のアビリティで作ったブースト位置からキルを取る。" },
+      "trade-kill":         { text: "トレードキル", hint: "倒された味方をすぐにトレードする。" },
+      "judge-kill":         { text: "ジャッジでキル", hint: "ジャッジでキルを取る。" },
+      "stinger-kill":       { text: "スティンガーでキル", hint: "スティンガーでキルを取る。" },
+      "frenzy-kill":        { text: "フレンジーでキル", hint: "フレンジーでキルを取る。" },
+      "outlaw-kill":        { text: "アウトローでキル", hint: "アウトローでキルを取る。" },
+      "bulldog-kill":       { text: "ブルドッグでキル", hint: "ブルドッグでキルを取る。" },
+      "guardian-headshot":  { text: "ガーディアンでHS", hint: "ガーディアンのヘッドショットでキルを取る。" },
+      "mic-spam":           { text: "マイクスパム", hint: "味方がボイスチャットで音楽やノイズを流し続ける。" },
+      "rage-quit":          { text: "途中抜け", hint: "味方が試合から抜けて戻ってこない。" },
+      "duelist-no-entry":   { text: "エントリーしないデュエリスト", hint: "デュエリストが一度も先に仕掛けない。" },
+      "agent-select-dodge": { text: "エージェント選択でドッジ", hint: "誰かがエージェント選択でロビーを抜ける。" }
+    }
+  }
+};
 
 // =========================================
 
-const MODES = {
+const MODE_ORDER = ["competitive", "unrated", "swiftplay", "spikerush"];
+const MODE_NAMES_EN = {
   competitive: "Competitive",
   unrated:     "Unrated",
   swiftplay:   "Swiftplay",
@@ -327,8 +498,12 @@ const MODES = {
 };
 
 const KEY = "valorant-bingo";
-const VERSION = 5;
+const VERSION = 6;
 const LEGACY_KEYS = ["valorant-bingo-v4"];
+const LITERAL = "lit:";   // board entry carrying its own text instead of a SQUARES id
+
+const BY_ID = new Map(SQUARES.map(s => [s.id, s]));
+const BY_TEXT = new Map(SQUARES.map(s => [s.text, s.id]));
 
 // ----- storage: report failures instead of swallowing them -----
 const store = {
@@ -352,21 +527,55 @@ try {
   store.available = false;
 }
 
+function poolFor(mode) {
+  return SQUARES.filter(s => !s.modes || s.modes.includes(mode));
+}
+
 function newBoard(mode) {
-  const pool = SQUARES.filter(s => !s.modes || s.modes.includes(mode));
+  const pool = poolFor(mode);
   for (let i = pool.length - 1; i > 0; i--) {
     const j = Math.floor(Math.random() * (i + 1));
     [pool[i], pool[j]] = [pool[j], pool[i]];
   }
-  return pool.slice(0, 25).map(({ text, hint }) => ({ text, hint }));
+  return pool.slice(0, 25).map(s => s.id);
 }
 
 function freshMarks() {
   return Array(25).fill(false);
 }
 
-function freshState(mode) {
-  return { version: VERSION, mode, board: newBoard(mode), marked: freshMarks(), color: "yellow", overrides: {} };
+function detectLang() {
+  const tags = (navigator.languages && navigator.languages.length)
+    ? navigator.languages
+    : [navigator.language || "en"];
+  for (const tag of tags) {
+    const base = String(tag).toLowerCase().split("-")[0];
+    if (LOCALES[base]) return base;
+  }
+  return "en";
+}
+
+function freshState(mode, lang) {
+  return {
+    version: VERSION,
+    lang,
+    mode,
+    board: newBoard(mode),
+    marked: freshMarks(),
+    color: "yellow",
+    overrides: {}
+  };
+}
+
+// A board entry is either a SQUARES id, or "lit:<text>" for a square whose text came
+// from an old save and no longer matches anything in the list.
+function squareFor(id) {
+  if (typeof id !== "string" || !id) return null;
+  if (id.startsWith(LITERAL)) {
+    const text = id.slice(LITERAL.length);
+    return text ? { id, text, hint: "" } : null;
+  }
+  return BY_ID.get(id) || null;
 }
 
 // Repair whatever is salvageable. Returns null only when the board itself is unusable,
@@ -375,27 +584,56 @@ function coerceState(raw) {
   if (!raw || typeof raw !== "object" || Array.isArray(raw)) return null;
   if (!Array.isArray(raw.board) || raw.board.length !== 25) return null;
 
+  const mode = MODE_NAMES_EN[raw.mode] ? raw.mode : "competitive";
+
+  // v5 and earlier stored {text, hint} per cell; v6 stores ids
   const board = [];
-  for (const sq of raw.board) {
-    if (!sq || typeof sq !== "object" || typeof sq.text !== "string" || !sq.text) return null;
-    board.push({ text: sq.text, hint: typeof sq.hint === "string" ? sq.hint : "" });
+  for (const entry of raw.board) {
+    if (typeof entry === "string") {
+      board.push(entry);
+    } else if (entry && typeof entry === "object" && typeof entry.text === "string" && entry.text) {
+      board.push(BY_TEXT.get(entry.text) || LITERAL + entry.text);
+    } else {
+      return null;
+    }
+  }
+
+  // An id that no longer exists (renamed or removed square) is swapped for an unused
+  // one from the same mode rather than nuking the whole board.
+  const used = new Set(board);
+  const spares = poolFor(mode).filter(s => !used.has(s.id));
+  for (let i = 0; i < board.length; i++) {
+    if (squareFor(board[i])) continue;
+    const spare = spares.pop();
+    if (!spare) return null;
+    board[i] = spare.id;
   }
 
   const marked = Array.isArray(raw.marked) && raw.marked.length === 25
     ? raw.marked.map(Boolean)
     : freshMarks();
 
-  // v4 had no overrides map; edits were baked straight into board text and died on shuffle
+  // v5 keyed overrides by English square text at the top level; v6 nests them per language
   const overrides = {};
+  const addOverride = (lang, key, value) => {
+    if (typeof value !== "string" || !value.trim()) return;
+    const id = BY_ID.has(key) ? key : BY_TEXT.get(key);
+    if (!id) return;
+    (overrides[lang] || (overrides[lang] = {}))[id] = value.trim().slice(0, 120);
+  };
   if (raw.overrides && typeof raw.overrides === "object" && !Array.isArray(raw.overrides)) {
     for (const [key, value] of Object.entries(raw.overrides)) {
-      if (typeof value === "string" && value.trim()) overrides[key] = value.trim().slice(0, 120);
+      if (typeof value === "string") addOverride("en", key, value);
+      else if (value && typeof value === "object" && !Array.isArray(value) && LOCALES[key]) {
+        for (const [id, text] of Object.entries(value)) addOverride(key, id, text);
+      }
     }
   }
 
   return {
     version: VERSION,
-    mode: MODES[raw.mode] ? raw.mode : "competitive",
+    lang: LOCALES[raw.lang] ? raw.lang : detectLang(),
+    mode,
     board,
     marked,
     color: raw.color,
@@ -410,24 +648,24 @@ function loadState() {
     let parsed;
     try { parsed = JSON.parse(text); } catch (e) { continue; }
     const migrated = coerceState(parsed);
-    if (migrated) return { state: migrated, from: key };
+    if (migrated) return { state: migrated, from: key, upgraded: parsed.version !== VERSION };
   }
-  return { state: null, from: null };
+  return { state: null, from: null, upgraded: false };
 }
 
 const loaded = loadState();
-let state = loaded.state || freshState("competitive");
-const needsMigration = loaded.from !== null && loaded.from !== KEY;
+let state = loaded.state || freshState("competitive", detectLang());
+// Write on first visit too, otherwise reloading before your first stamp hands you a
+// different board. Also covers a migrated save and an older version being upgraded.
+const needsWrite = loaded.state === null || loaded.from !== KEY || loaded.upgraded;
 
-const SAVE_FAILED = "Progress can't be saved in this browser (private mode, or storage is full). Your board will reset if you reload.";
 let warnedOnce = false;
-
 const save = () => {
   state.version = VERSION;
   if (store.write(KEY, JSON.stringify(state))) return;
   if (warnedOnce) return;
   warnedOnce = true;
-  showWarn(SAVE_FAILED);
+  showWarn(t("saveFailed"));
 };
 
 const LINES = [];
@@ -436,6 +674,55 @@ for (let i = 0; i < 5; i++) {
   LINES.push([0,1,2,3,4].map(j => j*5+i));
 }
 LINES.push([0,6,12,18,24], [4,8,12,16,20]);
+
+// ----- strings -----
+const fmt = (template, vars) => template.replace(/\{(\w+)\}/g, (m, k) => (k in vars ? vars[k] : m));
+
+// Looks up a dotted key in the active language, then English, so a partial
+// translation degrades one string at a time instead of breaking the page.
+function t(key, vars) {
+  for (const lang of [state.lang, "en"]) {
+    let node = LOCALES[lang] && LOCALES[lang].ui;
+    for (const part of key.split(".")) node = node && node[part];
+    if (typeof node === "string") return vars ? fmt(node, vars) : node;
+  }
+  return key;
+}
+
+function modeName(mode) {
+  const localized = LOCALES[state.lang] && LOCALES[state.lang].modes;
+  return (localized && localized[mode]) || MODE_NAMES_EN[mode];
+}
+
+// Edits are keyed by language and by the square's original id, so they follow that
+// square onto every future board and don't bleed across languages.
+function squareText(sq) {
+  const edited = (state.overrides[state.lang] || {})[sq.id];
+  return edited || baseText(sq);
+}
+
+function baseText(sq) {
+  const tr = translated(sq.id);
+  return (tr && tr.text) || sq.text;
+}
+
+function squareHint(sq) {
+  const tr = translated(sq.id);
+  return (tr && tr.hint) || sq.hint || "";
+}
+
+function translated(id) {
+  const squares = LOCALES[state.lang] && LOCALES[state.lang].squares;
+  return squares && squares[id];
+}
+
+function setOverride(sq, text) {
+  const clean = text.replace(/\s+/g, " ").trim().slice(0, 120);
+  const bucket = state.overrides[state.lang] || (state.overrides[state.lang] = {});
+  if (!clean || clean === baseText(sq)) delete bucket[sq.id];
+  else bucket[sq.id] = clean;
+  save();
+}
 
 // ----- stamp colors -----
 const COLORS = {
@@ -448,44 +735,109 @@ const COLORS = {
 if (!COLORS[state.color]) state.color = "yellow";
 
 const colorsEl = document.getElementById("colors");
+function buildColors() {
+  colorsEl.querySelectorAll(".swatch").forEach(b => b.remove());
+  Object.keys(COLORS).forEach(name => {
+    const b = document.createElement("button");
+    b.className = "swatch";
+    b.dataset.color = name;
+    b.title = t("colors." + name);
+    b.setAttribute("aria-label", t("stampAria", { color: t("colors." + name) }));
+    b.setAttribute("aria-pressed", name === state.color);
+    b.style.setProperty("--c", COLORS[name]);
+    b.onclick = () => { state.color = name; save(); applyColor(); };
+    colorsEl.appendChild(b);
+  });
+}
 function applyColor() {
   document.documentElement.style.setProperty("--dab", COLORS[state.color]);
   colorsEl.querySelectorAll(".swatch").forEach(b =>
     b.setAttribute("aria-pressed", b.dataset.color === state.color));
 }
-Object.keys(COLORS).forEach(name => {
-  const b = document.createElement("button");
-  b.className = "swatch";
-  b.dataset.color = name;
-  b.title = name;
-  b.setAttribute("aria-label", name + " stamp");
-  b.style.setProperty("--c", COLORS[name]);
-  b.onclick = () => { state.color = name; save(); applyColor(); };
-  colorsEl.appendChild(b);
-});
-applyColor();
 
 // ----- game modes -----
 const modesEl = document.getElementById("modes");
+function buildModes() {
+  modesEl.innerHTML = "";
+  MODE_ORDER.forEach(key => {
+    const b = document.createElement("button");
+    b.dataset.mode = key;
+    b.textContent = modeName(key);
+    b.setAttribute("aria-pressed", key === state.mode);
+    b.onclick = () => {
+      if (state.mode === key) return;
+      state.mode = key;
+      state.board = newBoard(key);
+      state.marked = freshMarks();
+      lastCount = 0;
+      save(); applyMode(); render();
+    };
+    modesEl.appendChild(b);
+  });
+}
 function applyMode() {
   modesEl.querySelectorAll("button").forEach(b =>
     b.setAttribute("aria-pressed", b.dataset.mode === state.mode));
 }
-Object.entries(MODES).forEach(([key, label]) => {
-  const b = document.createElement("button");
-  b.dataset.mode = key;
-  b.textContent = label;
-  b.onclick = () => {
-    if (state.mode === key) return;
-    state.mode = key;
-    state.board = newBoard(key);
-    state.marked = freshMarks();
-    lastCount = 0;
-    save(); applyMode(); render();
-  };
-  modesEl.appendChild(b);
+
+// ----- language -----
+const langEl = document.getElementById("lang");
+Object.entries(LOCALES).forEach(([code, locale]) => {
+  const o = document.createElement("option");
+  o.value = code;
+  o.textContent = locale.label;
+  langEl.appendChild(o);
 });
-applyMode();
+langEl.value = state.lang;
+langEl.onchange = () => {
+  if (!LOCALES[langEl.value]) return;
+  state.lang = langEl.value;   // the board is a list of ids, so switching only re-labels it
+  save();
+  applyLang();
+};
+
+// Japanese (and any other non-Latin script) needs its own font; load it on demand so
+// English users don't download a CJK face they'll never see.
+function applyFont() {
+  const root = document.documentElement.style;
+  const font = LOCALES[state.lang] && LOCALES[state.lang].font;
+  if (!font) {
+    root.removeProperty("--ui-font");
+    root.removeProperty("--display-font");
+    return;
+  }
+  const id = "font-" + state.lang;
+  if (!document.getElementById(id)) {
+    const link = document.createElement("link");
+    link.id = id;
+    link.rel = "stylesheet";
+    link.href = font.href;
+    document.head.appendChild(link);
+  }
+  root.setProperty("--ui-font", font.ui);
+  root.setProperty("--display-font", font.display);
+}
+
+function applyLang() {
+  document.documentElement.lang = state.lang;
+  document.title = t("docTitle");
+  applyFont();
+  document.getElementById("langLabel").textContent = t("langLabel");
+  langEl.value = state.lang;
+  modesEl.setAttribute("aria-label", t("modeGroup"));
+  grid.setAttribute("aria-label", t("gridLabel"));
+  document.getElementById("stampLabel").textContent = t("stampLabel");
+  document.getElementById("shuffle").textContent = t("newBoard");
+  document.getElementById("reset").textContent = t("clearStamps");
+  editBtn.textContent = editing ? t("doneEditing") : t("editSquares");
+  clearEditsBtn.textContent = t("resetEdits");
+  hintEl.textContent = editing ? t("hintEditing") : t("hintDefault");
+  if (!warnEl.hidden) warnEl.textContent = t("saveFailed");
+  buildModes();
+  buildColors();
+  applyColor();
+  render();
+}
 
 // ----- hover tooltip -----
 const tip = document.getElementById("tip");
@@ -504,8 +856,9 @@ window.addEventListener("scroll", hideTip, { passive: true });
 const grid = document.getElementById("grid");
 const statusEl = document.getElementById("status");
 const hintEl = document.getElementById("hint");
-const DEFAULT_HINT = "Tap a square to stamp it. Hover for details.";
 const warnEl = document.getElementById("warn");
+const editBtn = document.getElementById("edit");
+const clearEditsBtn = document.getElementById("clearEdits");
 function showWarn(msg) { warnEl.textContent = msg; warnEl.hidden = false; }
 
 function wonLines() { return LINES.filter(line => line.every(i => state.marked[i])); }
@@ -516,20 +869,29 @@ let lastCount = wonLines().length;
 
 function render() {
   grid.innerHTML = "";
-  state.board.forEach((sq, i) => {
+  state.board.forEach((id, i) => {
+    const sq = squareFor(id) || { id: id, text: id, hint: "" };
+    const label = squareText(sq);
+    const hint = squareHint(sq);
+
     const c = document.createElement("div");
     c.className = "cell" + (state.marked[i] ? " marked" : "");
+    // translations run longer or shorter than English; shrink the text rather than clip it
+    const len = Array.from(label).length;
+    if (len > 20) c.classList.add("longest");
+    else if (len > 13) c.classList.add("long");
     c.tabIndex = 0;
     c.setAttribute("role", "gridcell");
     c.setAttribute("aria-pressed", state.marked[i]);
-    if (sq.hint) c.setAttribute("aria-description", sq.hint);
+    if (hint) c.setAttribute("aria-description", hint);
     const r = (i * 37) % 11;
     c.style.setProperty("--rot", (r * 13) + "deg");
     c.style.setProperty("--dx", ((r % 5) - 2) * 2 + "px");
     c.style.setProperty("--dy", ((r % 3) - 1) * 3 + "px");
+
     const l = document.createElement("span");
     l.className = "label";
-    l.textContent = labelFor(sq);
+    l.textContent = label;
     if (editing) {
       l.contentEditable = "true";
       // store text, never markup: pasted HTML can't survive into a saved board
@@ -538,17 +900,17 @@ function render() {
         const text = (e.clipboardData || window.clipboardData).getData("text");
         document.execCommand("insertText", false, text.replace(/\s+/g, " "));
       });
-      l.addEventListener("input", () => setOverride(sq.text, l.textContent));
+      l.addEventListener("input", () => setOverride(sq, l.textContent));
     }
     c.appendChild(l);
 
-    c.addEventListener("mouseenter", () => showTip(c, sq.hint));
+    c.addEventListener("mouseenter", () => showTip(c, hint));
     c.addEventListener("mouseleave", hideTip);
-    c.addEventListener("focus", () => showTip(c, sq.hint));
+    c.addEventListener("focus", () => showTip(c, hint));
     c.addEventListener("blur", hideTip);
     c.addEventListener("pointerup", e => {
       // touch screens have no hover, so show the hint under the board instead
-      if (e.pointerType === "touch" && sq.hint) hintEl.textContent = sq.hint;
+      if (e.pointerType === "touch" && hint) hintEl.textContent = hint;
     });
     c.addEventListener("click", () => toggle(i));
     c.addEventListener("keydown", e => {
@@ -557,17 +919,6 @@ function render() {
     grid.appendChild(c);
   });
   check();
-}
-
-// Edits are keyed by the square's original text, so they follow that square
-// onto every future board instead of dying with the current one.
-function labelFor(sq) { return state.overrides[sq.text] || sq.text; }
-
-function setOverride(original, text) {
-  const clean = text.replace(/\s+/g, " ").trim().slice(0, 120);
-  if (!clean || clean === original) delete state.overrides[original];
-  else state.overrides[original] = clean;
-  save();
 }
 
 function toggle(i) {
@@ -584,10 +935,10 @@ function check() {
   won.flat().forEach(i => cells[i].classList.add("win"));
   const n = won.length;
   document.querySelectorAll("#letters span").forEach((s, k) => s.classList.toggle("lit", k < n));
-  if (state.marked.every(Boolean)) statusEl.textContent = "BLACKOUT! 🐸";
+  if (state.marked.every(Boolean)) statusEl.textContent = t("blackout");
   else if (n === 0) statusEl.textContent = "";
-  else if (n === 1) statusEl.textContent = "BINGO!";
-  else statusEl.textContent = n + "× BINGO!";
+  else if (n === 1) statusEl.textContent = t("bingo");
+  else statusEl.textContent = t("bingoMulti", { n: n });
   if (n > lastCount) { statusEl.classList.remove("pop"); void statusEl.offsetWidth; statusEl.classList.add("pop"); }
   lastCount = n;
 }
@@ -602,38 +953,34 @@ document.getElementById("shuffle").onclick = () => {
   state.board = newBoard(state.mode);
   state.marked = freshMarks();
   lastCount = 0;
-  hintEl.textContent = DEFAULT_HINT;
+  hintEl.textContent = t("hintDefault");
   save(); render();
 };
-
-const editBtn = document.getElementById("edit");
-const clearEditsBtn = document.getElementById("clearEdits");
 
 editBtn.onclick = () => {
   editing = !editing;
   hideTip();
   document.body.classList.toggle("editing", editing);
-  editBtn.textContent = editing ? "Done editing" : "Edit squares";
+  editBtn.textContent = editing ? t("doneEditing") : t("editSquares");
   clearEditsBtn.hidden = !editing;
-  hintEl.textContent = editing
-    ? "Click into any square to change its text. Edits stick to that square on future boards."
-    : DEFAULT_HINT;
+  hintEl.textContent = editing ? t("hintEditing") : t("hintDefault");
   render();
 };
 
+// clears edits for the language you're looking at, not every language at once
 clearEditsBtn.onclick = () => {
-  state.overrides = {};
+  delete state.overrides[state.lang];
   save();
   render();
 };
 
-if (needsMigration) {
+if (needsWrite) {
   save();
   LEGACY_KEYS.forEach(store.remove, store);
 }
-if (!store.available) showWarn(SAVE_FAILED);
+if (!store.available) showWarn(t("saveFailed"));
 
-render();
+applyLang();
 </script>
 </body>
 </html>
